@@ -8,14 +8,20 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from module_list import *
 
-root = 'dataset'
-im_root = 'dataset/cityscapes/images'
-label_root = 'dataset/cityscapes/labels'
 
-os.makedirs(im_root + '/train')
-os.makedirs(im_root + '/val')
-os.makedirs(label_root + '/train')
-os.makedirs(label_root + '/val')
+def conditional_makedirs(dir):
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
+
+root = '../dataset/cityscapes'
+im_root = '../dataset/cityscapes/images'
+label_root = '../dataset/cityscapes/labels'
+
+conditional_makedirs(im_root + '/train')
+conditional_makedirs(im_root + '/val')
+conditional_makedirs(label_root + '/train')
+conditional_makedirs(label_root + '/val')
 
 
 train_im_list = glob.glob(root + '/leftImg8bit_trainvaltest/leftImg8bit/train/*')

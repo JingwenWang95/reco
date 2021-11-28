@@ -63,6 +63,7 @@ def compute_unsupervised_loss(predict, target, logits, strong_threshold):
 # Define ReCo loss
 # --------------------------------------------------------------------------------
 def compute_reco_loss(rep, label, mask, prob, strong_threshold=1.0, temp=0.5, num_queries=256, num_negatives=256):
+    # (4, 256, 128, 128)
     batch_size, num_feat, im_w_, im_h = rep.shape
     num_segments = label.shape[1]
     device = rep.device
@@ -74,10 +75,12 @@ def compute_reco_loss(rep, label, mask, prob, strong_threshold=1.0, temp=0.5, nu
     rep = rep.permute(0, 2, 3, 1)
 
     # compute prototype (class mean representation) for each class across all valid pixels
+    # class mean is used as the only positive sample
     seg_feat_all_list = []
     seg_feat_hard_list = []
     seg_num_list = []
     seg_proto_list = []
+    # number of classes/masks
     for i in range(num_segments):
         valid_pixel_seg = valid_pixel[:, i]  # select binary mask for i-th class
         if valid_pixel_seg.sum() == 0:  # not all classes would be available in a mini-batch
@@ -112,6 +115,7 @@ def compute_reco_loss(rep, label, mask, prob, strong_threshold=1.0, temp=0.5, nu
             # apply negative key sampling (with no gradients)
             with torch.no_grad():
                 # generate index mask for the current query class; e.g. [0, 1, 2] -> [1, 2, 0] -> [2, 0, 1]
+                # current class is always at the first
                 seg_mask = torch.cat(([seg_len[i:], seg_len[:i]]))
 
                 # compute similarity for each negative segment prototype (semantic class relation graph)
@@ -129,6 +133,7 @@ def compute_reco_loss(rep, label, mask, prob, strong_threshold=1.0, temp=0.5, nu
 
                 # index negative keys (from other classes)
                 negative_feat_all = torch.cat(seg_feat_all_list[i+1:] + seg_feat_all_list[:i])
+                # (256, 512, 256)
                 negative_feat = negative_feat_all[negative_index].reshape(num_queries, num_negatives, num_feat)
 
                 # combine positive and negative keys: keys = [positive key | negative keys] with 1 + num_negative dim
@@ -184,11 +189,15 @@ def label_binariser(inputs):
 
 
 def label_onehot(inputs, num_segments):
+    # (4, 512, 512)
     batch_size, im_h, im_w = inputs.shape
     # remap invalid pixels (-1) into 0, otherwise we cannot create one-hot vector with negative labels.
     # we will still mask out those invalid values in valid mask
     inputs = torch.relu(inputs)
     outputs = torch.zeros([batch_size, num_segments, im_h, im_w]).to(inputs.device)
+    # Tensor.scatter_(dim, index, src, reduce=None)
+    # Why is it necessary to convert to one-hot vector?
+    # (4, 19, 512, 512)
     return outputs.scatter_(1, inputs.unsqueeze(1), 1.0)
 
 

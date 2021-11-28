@@ -16,17 +16,20 @@ parser.add_argument('--mode', default=None, type=str)
 parser.add_argument('--port', default=None, type=int)
 
 parser.add_argument('--gpu', default=0, type=int)
-parser.add_argument('--num_labels', default=15, type=int, help='number of labelled training data, set 0 to use all training data')
+parser.add_argument('--num_labels', default=20, type=int, help='number of labelled training data, set 0 to use all training data')
 parser.add_argument('--lr', default=2.5e-3, type=float)
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--dataset', default='cityscapes', type=str, help='pascal, cityscapes, sun')
+parser.add_argument('--weak_threshold', default=0.7, type=float)
+parser.add_argument('--strong_threshold', default=0.97, type=float)
 parser.add_argument('--apply_reco', action='store_true')
-parser.add_argument('--num_negatives', default=512, type=int, help='number of negative keys')
-parser.add_argument('--num_queries', default=256, type=int, help='number of queries per segment per image')
+parser.add_argument('--num_negatives', default=256, type=int, help='number of negative keys')
+parser.add_argument('--num_queries', default=128, type=int, help='number of queries per segment per image')
 parser.add_argument('--output_dim', default=256, type=int, help='output dimension from representation head')
 parser.add_argument('--temp', default=0.5, type=float)
 parser.add_argument('--backbone', default='deeplabv3p', type=str, help='choose backbone: deeplabv3p, deeplabv2')
 parser.add_argument('--seed', default=0, type=int)
+parser.add_argument('--save_dir', default="./logs", type=str)
 
 args = parser.parse_args()
 
@@ -60,11 +63,13 @@ for index in range(total_epoch):
     model.train()
     conf_mat = ConfMatrix(data_loader.num_segments)
     for i in range(train_epoch):
+        # (4, 3, 512, 512), (4, 512, 512)
         train_data, train_label = train_l_dataset.next()
         train_data, train_label = train_data.to(device), train_label.to(device)
 
         optimizer.zero_grad()
 
+        # (4, 19, 128, 128), (4, 256, 128, 128)
         pred, rep = model(train_data)
         pred_large = F.interpolate(pred, size=train_label.shape[1:], mode='bilinear', align_corners=True)
         sup_loss = compute_supervised_loss(pred_large, train_label)
@@ -72,8 +77,11 @@ for index in range(total_epoch):
         # regional contrastive loss
         if args.apply_reco:
             with torch.no_grad():
+                # remove all the -1's (4, 512, 512)
                 mask = F.interpolate((train_label.unsqueeze(1) >= 0).float(), size=pred.shape[2:], mode='nearest')
+                # (4, 19, 512, 512)
                 label = F.interpolate(label_onehot(train_label, data_loader.num_segments), size=pred.shape[2:], mode='nearest')
+                # (4, 19, 512, 512)
                 prob = torch.softmax(pred, dim=1)
 
             reco_loss = compute_reco_loss(rep, label, mask, prob, args.strong_threshold, args.temp, args.num_queries, args.num_negatives)
